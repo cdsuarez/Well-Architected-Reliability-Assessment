@@ -47,7 +47,7 @@ try {
     }
     
     # Save the config to the output directory for reference
-    $config | ConvertTo-Json -Depth 10 | Out-File -FilePath "$OutputDirectory/wara-config.json" -Force
+    $config | ConvertTo-Json -Depth 10 | Out-File -FilePath "$OutputDirectory/wara-tenant-config.json" -Force
     
     # Check if we're already connected to Azure
     $context = Get-AzContext -ErrorAction SilentlyContinue

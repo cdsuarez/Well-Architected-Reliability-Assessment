@@ -41,7 +41,7 @@ Import-Module WARA
 
 ## Configuration
 
-1. Create a configuration file (e.g., `wara-config.json`) based on the example:
+1. Create a configuration file (e.g., `wara-tenant-config.json`) based on the example:
    ```json
    {
        "azure": {
@@ -75,7 +75,7 @@ Import-Module WARA
 
 ```powershell
 # Run the collector
-$collectorOutput = Start-WARACollector -ConfigFile .\wara-config.json
+$collectorOutput = Start-WARACollector -ConfigFile .\wara-tenant-config.json
 
 # Analyze the results
 $analyzerOutput = Start-WARAAnalyzer -InputFile $collectorOutput
@@ -215,7 +215,7 @@ Enable verbose logging for detailed troubleshooting:
 $VerbosePreference = 'Continue'
 
 # Run with detailed logging
-Start-WARACollector -ConfigFile .\wara-config.json -Verbose
+Start-WARACollector -ConfigFile .\wara-tenant-config.json -Verbose
 ```
 
 ## Support

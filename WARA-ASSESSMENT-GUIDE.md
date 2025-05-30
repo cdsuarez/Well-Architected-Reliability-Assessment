@@ -23,7 +23,7 @@ This guide explains how to use the WARA assessment tool with the configuration f
 
 ## Configuration File
 
-The WARA assessment is configured using a JSON file (`wara-config.json`). This file contains all the necessary settings for the assessment.
+The WARA assessment is configured using a JSON file (`wara-tenant-config.json`). This file contains all the necessary settings for the assessment.
 
 ### Configuration File Structure
 
@@ -119,7 +119,7 @@ The WARA assessment is configured using a JSON file (`wara-config.json`). This f
    Install-Module -Name Az.Accounts, Az.Resources, Az.Storage, ImportExcel, Pester -Force -AllowClobber
    ```
 
-3. Update the `wara-config.json` file with your settings
+3. Update the `wara-tenant-config.json` file with your settings
 
 ### Running Locally
 
@@ -132,7 +132,7 @@ To assess a single subscription, use the following steps:
 3. Run the following command:
 
    ```powershell
-   .\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-config.json
+   .\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
    ```
 
 #### Tenant-Wide Assessment
@@ -168,7 +168,7 @@ You can run tenant-wide assessments either locally or through a CI/CD pipeline.
 2. Run the assessment locally:
 
 ```powershell
-.\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-config.json
+.\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
 ```
 
 **Pipeline Integration**
@@ -259,7 +259,7 @@ jobs:
           .\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
         } else {
           Import-Module .\src\modules\wara -Force
-          Start-WARACollector -ConfigFile .\wara-config.json
+          Start-WARACollector -ConfigFile .\wara-tenant-config.json
           $jsonFile = Get-ChildItem -Path . -Filter 'WARA_*.json' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           Start-WARAAnalyzer -JSONFile $jsonFile.FullName
         }
@@ -276,7 +276,7 @@ jobs:
 
 ### Configuration File Examples
 
-#### 1. Single Subscription (`wara-config.json`)
+#### 1. Tenant-Wide Configuration (`wara-tenant-config.json`)
 ```json
 {
   "azure": {
@@ -364,7 +364,7 @@ To assess all subscriptions with specific tags:
 
 2. Update the pipeline variables in `azure-pipelines.wara.yml`:
    - `azureSubscription`: The name of your Azure DevOps service connection
-   - `configFile`: Path to your configuration file (default: `wara-config.json`)
+   - `configFile`: Path to your configuration file (default: `wara-tenant-config.json`)
 
 3. Commit and push your changes to the repository
 

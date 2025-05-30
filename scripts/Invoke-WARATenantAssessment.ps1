@@ -17,11 +17,11 @@
 
 .EXAMPLE
     # Run with default settings
-    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-config.json
+    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
 
 .EXAMPLE
     # Run with custom parallelism and resume from a subscription
-    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-config.json -ThrottleLimit 3 -ResumeFrom '00000000-0000-0000-0000-000000000001'
+    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json -ThrottleLimit 3 -ResumeFrom '00000000-0000-0000-0000-000000000001'
 
 .NOTES
     Version: 2.0.0

@@ -11,7 +11,7 @@
     Path to the WARA configuration JSON file.
 
 .EXAMPLE
-    $config = .\scripts\Get-WARAConfig.ps1 -ConfigPath .\wara-config.json
+    $config = .\scripts\Get-WARAConfig.ps1 -ConfigPath .\wara-tenant-config.json
 #>
 
 [CmdletBinding()]
