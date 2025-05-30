@@ -1,0 +1,46 @@
+{
+  "azure": {
+    "tenantId": "00000000-0000-0000-0000-000000000000",
+    "subscriptionId": "00000000-0000-0000-0000-000000000000",
+    "subscriptionName": "Your Subscription Name (optional if assessAllSubscriptions is true)",
+    "assessAllSubscriptions": false,
+    "subscriptionFilter": {
+      "includedSubscriptions": [],
+      "excludedSubscriptions": [],
+      "includedTags": {},
+      "excludedTags": {}
+    },
+    "resourceGroups": [
+      "resource-group-1",
+      "resource-group-2"
+    ]
+  },
+  "assessment": {
+    "customerName": "Contoso",
+    "workloadName": "Production",
+    "environment": "Production",
+    "regions": ["eastus", "westus"],
+    "tags": {
+      "Environment": "Production",
+      "Department": "IT"
+    },
+    "outputDirectory": "wara-results",
+    "includeSpecializedWorkloads": true,
+    "specializedWorkloads": [
+      "SAP",
+      "AVD"
+    ]
+  },
+  "publishing": {
+    "publishToWiki": false,
+    "wikiPath": "wiki/",
+    "publishToStorage": false,
+    "storageAccountName": "",
+    "storageContainer": "wara-reports"
+  },
+  "notifications": {
+    "sendEmail": false,
+    "emailRecipients": ["admin@contoso.com"],
+    "slackWebhookUrl": ""
+  }
+}

@@ -87,6 +87,7 @@
         'Start-WARACollector',
         'Start-WARAAnalyzer',
         'Start-WARAReport',
+        'Export-WARAReport',
         "Get-RunbookSchema",
         "New-RunbookRecommendation",
         "New-Recommendation",

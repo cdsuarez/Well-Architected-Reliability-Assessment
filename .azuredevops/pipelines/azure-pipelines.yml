@@ -1,0 +1,171 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - CHANGELOG.md
+      - README.md
+
+pr:
+  - main
+
+variables:
+  - name: pwshVersion
+    value: '7.4'
+  - name: moduleName
+    value: 'WARA'
+  - name: artifactName
+    value: 'wara-module'
+  - name: isMainBranch
+    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+  - name: versionBumpType
+    value: 'patch'  # Default to patch, can be overridden in pipeline variables
+  - group: WARA-Pipeline-Vars  # Variable group for pipeline variables
+
+stages:
+- stage: Version
+  displayName: 'Bump Version'
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: BumpVersion
+    displayName: 'Bump Version and Update Changelog'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
+      fetchDepth: 0
+      
+    - task: PowerShell@2
+      displayName: 'Bump Version'
+      inputs:
+        targetType: 'filePath'
+        filePath: './scripts/bump-version.ps1'
+        arguments: '-BumpType $(versionBumpType)'
+        pwsh: true
+      name: bumpVersion
+      env:
+        GIT_COMMITTER_NAME: $(Build.RequestedFor)
+        GIT_COMMITTER_EMAIL: $(Build.RequestedForEmail)
+        
+    - task: PowerShell@2
+      displayName: 'Commit Version Bump'
+      condition: succeededOrFailed()
+      inputs:
+        targetType: 'inline'
+        script: |
+          git config --global user.name "$(Build.RequestedFor)"
+          git config --global user.email "$(Build.RequestedForEmail)"
+          git add CHANGELOG.md
+          git add src/modules/wara/wara.psd1
+          git commit -m "chore: bump version to $(bumpVersion.NEW_VERSION)" || echo "No changes to commit"
+          git push origin HEAD:$(Build.SourceBranchName) || echo "No changes to push"
+        pwsh: true
+      env:
+        GIT_REDIRECT_STDERR: 2>&1
+
+- stage: Test
+  displayName: 'Test'
+  dependsOn: Version
+  condition: and(succeeded(), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['isMainBranch'], true)))
+  jobs:
+  - job: Test
+    displayName: 'Run Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: PowerShell@2
+      displayName: 'Run Tests'
+      inputs:
+        targetType: 'filePath'
+        filePath: './scripts/run-tests.ps1'
+        pwsh: true
+        
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      condition: always()
+      inputs:
+        testResultsFormat: 'NUnit'
+        testResultsFiles: '**/test-results/*.xml'
+        failTaskOnFailedTests: true
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Artifacts'
+      condition: always()
+      inputs:
+        pathtoPublish: '$(Build.SourcesDirectory)/testResults'
+        artifactName: 'test-results'
+        publishLocation: 'Container'
+
+- stage: Build
+  displayName: 'Build'
+  dependsOn: Test
+  condition: and(succeeded(), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['isMainBranch'], true)))
+  jobs:
+  - job: Build
+    displayName: 'Build Module'
+    pool:
+      vmImage: 'windows-latest'
+    variables:
+      - name: moduleVersion
+        value: $[stageDependencies.Version.BumpVersion.outputs['bumpVersion.NEW_VERSION']]
+    steps:
+    - task: PowerShell@2
+      displayName: 'Build Module'
+      inputs:
+        targetType: 'filePath'
+        filePath: './scripts/build-module.ps1'
+        arguments: '-ModuleName $(moduleName)'
+        pwsh: true
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Build Artifacts'
+      inputs:
+        pathtoPublish: '$(Build.SourcesDirectory)/output'
+        artifactName: '$(artifactName)'
+        publishLocation: 'Container'
+
+- stage: Deploy
+  displayName: 'Deploy to Production'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+    - group: WARA-Pipeline-Vars  # Contains NUGET_API_KEY
+  jobs:
+  - deployment: Deploy
+    displayName: 'Deploy to PSGallery'
+    environment: 'Production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: '$(artifactName)'
+            
+          - task: PowerShell@2
+            displayName: 'Publish to PowerShell Gallery'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $modulePath = "$(Pipeline.Workspace)/$(artifactName)/$(moduleName)"
+                if (-not (Test-Path $modulePath)) {
+                    Write-Error "Module not found at path: $modulePath"
+                    exit 1
+                }
+                
+                # Check if NUGET_API_KEY is available
+                if (-not $env:NUGET_API_KEY) {
+                    Write-Error "NUGET_API_KEY secret is not set. Please add it to the WARA-Pipeline-Vars variable group."
+                    exit 1
+                }
+                
+                # Publish the module
+                .\scripts\publish-module.ps1 -Path $modulePath -ApiKey $env:NUGET_API_KEY
+              pwsh: true
+              failOnStderr: true
+              errorActionPreference: 'stop'
+            env:
+              NUGET_API_KEY: $(NUGET_API_KEY)

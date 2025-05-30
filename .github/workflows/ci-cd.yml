@@ -1,0 +1,183 @@
+name: WARA CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type (major|minor|patch|prerelease)'
+        required: false
+        default: ''
+
+# Default environment variables for jobs
+defaults:
+  run:
+    shell: pwsh
+    working-directory: ./
+
+
+# Global environment variables
+env:
+  POWERSHELL_VERSION: '7.4'
+  MODULE_NAME: 'WARA'
+  ARTIFACT_NAME: 'wara-module'
+  GIT_USERNAME: 'github-actions[bot]'
+  GIT_EMAIL: 'github-actions[bot]@users.noreply.github.com'
+  NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v3
+        with:
+          pwsh-version: ${{ env.POWERSHELL_VERSION }}
+          
+      - name: Run Tests
+        run: ./scripts/run-tests.ps1
+        shell: pwsh
+        
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./testResults/
+          retention-days: 7
+          
+      - name: Upload PSScriptAnalyzer Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: script-analysis
+          path: ./scriptAnalysis/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  version:
+    name: Bump Version
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Git Identity
+        run: |
+          git config --global user.name "${{ env.GIT_USERNAME }}"
+          git config --global user.email "${{ env.GIT_EMAIL }}"
+          
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v3
+        with:
+          pwsh-version: ${{ env.POWERSHELL_VERSION }}
+          
+      - name: Bump Version
+        id: bump_version
+        run: |
+          $bumpType = "${{ github.event.inputs.version_bump }}"
+          if ([string]::IsNullOrEmpty($bumpType)) {
+              $bumpType = ""
+          }
+          $version = .\scripts\bump-version.ps1 -BumpType $bumpType
+          echo "new_version=$version" >> $env:GITHUB_OUTPUT
+          
+      - name: Commit version bump
+        run: |
+          git add CHANGELOG.md
+          git add src/modules/wara/wara.psd1
+          git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}" || echo "No changes to commit"
+          git push origin HEAD:main || echo "No changes to push"
+
+  build:
+    name: Build
+    needs: [test, version]
+    runs-on: windows-latest
+    if: always() && !cancelled()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v3
+        with:
+          pwsh-version: ${{ env.POWERSHELL_VERSION }}
+          
+      - name: Build Module
+        run: |
+          $version = "${{ needs.version.outputs.new_version }}"
+          if ([string]::IsNullOrEmpty($version)) {
+              $version = (Import-PowerShellDataFile -Path "./src/modules/wara/wara.psd1").ModuleVersion
+          }
+          .\scripts\build-module.ps1 -ModuleName $env:MODULE_NAME -Version $version
+        shell: pwsh
+        
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ./output/
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    needs: [build, version]
+    if: github.event_name == 'release' && github.event.action == 'created'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write  # Needed for OIDC authentication with Azure
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ./output
+          
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v3
+        with:
+          pwsh-version: ${{ env.POWERSHELL_VERSION }}
+          
+      - name: Publish to PowerShell Gallery
+        if: github.event_name == 'release' && github.event.action == 'created'
+        run: |
+          if (-not $env:NUGET_API_KEY) {
+            Write-Error "NUGET_API_KEY secret is not set"
+            exit 1
+          }
+          ./scripts/publish-module.ps1 -Path "./output/$env:MODULE_NAME" -ApiKey $env:NUGET_API_KEY
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          
+      - name: Verify Publish (if NUGET_API_KEY not available)
+        if: github.event_name != 'release' || github.event.action != 'created'
+        run: |
+          Write-Host "Skipping publish - not a release event"
+          Write-Host "To publish to PowerShell Gallery, create a new release"

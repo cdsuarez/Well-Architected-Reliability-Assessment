@@ -1,5 +1,6 @@
 [![RunPesterTests](https://github.com/Azure/Well-Architected-Reliability-Assessment/actions/workflows/pestertests.yml/badge.svg)](https://github.com/Azure/Well-Architected-Reliability-Assessment/actions/workflows/pestertests.yml)
 [![PSScriptAnalyzer](https://github.com/Azure/Well-Architected-Reliability-Assessment/actions/workflows/powershell.yml/badge.svg)](https://github.com/Azure/Well-Architected-Reliability-Assessment/actions/workflows/powershell.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > [!NOTE]
 > This repository is for the development of the WARA tooling. The up to date documentation for the module commands can be found [here](https://azure.github.io/Azure-Proactive-Resiliency-Library-v2/tools/).
@@ -17,13 +18,25 @@ This repository holds scripts and automation built for the Well-Architected Reli
 - [Patch Notes](#patch-notes)
 - [Getting Started](#getting-started)
   - [Quick Workflow Example](#quick-workflow-example)
+- [Documentation](#documentation)
 - [Requirements](#requirements)
 - [Quick Starts](#quick-starts)
   - [Start-WARACollector](#start-waracollector)
   - [Start-WARAAnalyzer](#start-waraanalyzer)
   - [Start-WARAReport](#start-warareport)
+- [CI/CD Pipeline](#cicd-pipeline)
+  - [GitHub Actions](#github-actions)
+  - [Azure DevOps](#azure-devops)
 - [Project Structure](#project-structure)
-- [Contribution Guide](docs/wara/contribution-guide.md)
+- [Deployment Guide](DEPLOYMENT.md)
+- [Documentation](docs/README.md)
+- [Architecture](docs/architecture.md)
+- [Glossary](docs/glossary.md)
+- [Maintenance Runbooks](runbooks/README.md)
+- [Contribution Guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
+- [License](LICENSE)
 - [Modules](#modules)
 
 ## Getting Started
@@ -50,28 +63,68 @@ flowchart TD
     end
 ```
 
-### Quick Workflow Example
+### Quick Workflow Examples
+
+#### Single Subscription Assessment
 
 ```PowerShell
-# Assume we running from a C:\WARA directory
-
-# Installs the WARA module from the PowerShell Gallery.
-Install-Module WARA
-
-# Imports the WARA module to the PowerShell session.
+# Install and import the WARA module
+Install-Module WARA -Force -AllowClobber
 Import-Module WARA
 
-# Start the WARA collector.
+# Start the WARA collector for a single subscription
 Start-WARACollector -TenantID "00000000-0000-0000-0000-000000000000" -SubscriptionIds "/subscriptions/00000000-0000-0000-0000-000000000000"
 
-# Assume output from collector is 'C:\WARA\WARA_File_2024-04-01_10_01.json'
-Start-WARAAnalyzer -JSONFile 'C:\WARA\WARA_File_2024-04-01_10_01.json'
+# Process the collected data
+$jsonFile = Get-ChildItem -Path . -Filter "WARA_File_*.json" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Start-WARAAnalyzer -JSONFile $jsonFile.FullName
 
-# This needs to be run on a Windows machine with PowerPoint installed.
-# Assume output from analyzer is 'C:\WARA\Expert-Analysis-v1-2025-02-04-11-14.xlsx'
-Start-WARAReport -ExpertAnalysisFile 'C:\WARA\Expert-Analysis-v1-2025-02-04-11-14.xlsx'
+# Generate reports (requires Windows with PowerPoint)
+$excelFile = Get-ChildItem -Path . -Filter "Expert-Analysis-*.xlsx" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Start-WARAReport -ExpertAnalysisFile $excelFile.FullName
+```
 
-#You will now have your PowerPoint and Excel reports generated under the C:\WARA directory.
+#### Tenant-Wide Assessment
+
+**Local Execution**
+
+```PowerShell
+# Install and import the required modules
+Install-Module Az.Accounts, Az.Resources -Force -AllowClobber
+Import-Module $PSScriptRoot\src\modules\wara -Force
+
+# Run the tenant-wide assessment
+.\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
+
+# The script will process all matching subscriptions and generate a summary report
+```
+
+**Pipeline Integration**
+
+You can also run the tenant assessment as part of your CI/CD pipeline. Here's an example for Azure DevOps:
+
+```yaml
+- task: AzurePowerShell@5
+  displayName: 'Run WARA Tenant Assessment'
+  inputs:
+    azureSubscription: 'your-azure-connection'
+    ScriptType: 'FilePath'
+    ScriptPath: '$(Build.SourcesDirectory)/scripts/Invoke-WARATenantAssessment.ps1'
+    ScriptArguments: '-ConfigFile $(Build.SourcesDirectory)/wara-tenant-config.json'
+    azurePowerShellVersion: 'LatestVersion'
+    pwsh: true
+```
+
+Or for GitHub Actions:
+
+```yaml
+- name: Run WARA Tenant Assessment
+  shell: pwsh
+  run: |
+    .\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
+```
+
+For more details on configuration options and pipeline setup, see the [WARA Assessment Guide](WARA-ASSESSMENT-GUIDE.md).
 ```
 
 ## Requirements
@@ -229,6 +282,38 @@ You can review all of the parameters of Start-WARAReport [here](docs/wara/Start-
 ```PowerShell
 Start-WARAReport -ExpertAnalysisFile 'C:\WARA\Expert-Analysis-v1-2025-02-04-11-14.xlsx'
 ```
+
+## CI/CD Pipeline
+
+The project includes CI/CD pipelines for both GitHub Actions and Azure DevOps to automate testing, building, and deployment of the WARA module.
+
+### GitHub Actions
+
+The GitHub Actions workflow is defined in `.github/workflows/ci-cd.yml` and includes the following jobs:
+
+1. **Test**: Runs Pester tests and PSScriptAnalyzer on Ubuntu
+2. **Build**: Builds the module on Windows
+3. **Deploy**: Publishes the module to PowerShell Gallery (runs on release)
+
+#### GitHub Secrets
+
+To use the GitHub Actions workflow, you need to set up the following secrets:
+
+- `NUGET_API_KEY`: Your PowerShell Gallery API key for publishing packages
+
+### Azure DevOps
+
+The Azure DevOps pipeline is defined in `azure-pipelines.yml` and includes the following stages:
+
+1. **Test**: Runs Pester tests and PSScriptAnalyzer
+2. **Build**: Builds the module
+3. **Deploy**: Publishes the module to PowerShell Gallery (runs on main branch)
+
+#### Azure DevOps Variables
+
+To use the Azure DevOps pipeline, you need to set up the following variables in your pipeline:
+
+- `NUGET_API_KEY`: Your PowerShell Gallery API key for publishing packages
 
 ## Project Structure
 
