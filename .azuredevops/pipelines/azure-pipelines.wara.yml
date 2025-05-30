@@ -20,15 +20,15 @@ pr: none
 
 variables:
   - name: azureSubscription
-    value: 'wara-azure-connection' # Azure DevOps service connection name
+    value: 'AzureResiliencySC' # Azure DevOps service connection name
   - name: configFile
-    value: 'wara-config.json' # Path to the configuration file
+    value: 'wara-tenant-config.json' # Path to the configuration file
   - name: outputDirectory
     value: '$(Build.ArtifactStagingDirectory)/wara-output'
   - name: assessmentScope
-    value: 'single' # 'single' or 'tenant'
+    value: 'tenant' # 'single' or 'tenant'
   - name: tenantId
-    value: '' # Required for tenant-wide assessments
+    value: '' # Will be read from the config file
 
 stages:
 - stage: WARA_Assessment

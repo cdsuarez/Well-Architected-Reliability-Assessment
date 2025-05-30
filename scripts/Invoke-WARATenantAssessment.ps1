@@ -34,10 +34,41 @@
     - Comprehensive error handling
 #>
 
-[CmdletBinding()]
+#region Script Parameters
+<#
+.SYNOPSIS
+    Performs a Well-Architected Reliability Assessment across multiple subscriptions in a tenant.
+
+.DESCRIPTION
+    This script runs the WARA collector across multiple subscriptions in a tenant, either all accessible subscriptions
+    or a filtered subset based on the provided configuration. It supports parallel processing and rate limiting.
+
+.PARAMETER ConfigFile
+    Path to the JSON configuration file containing assessment settings.
+
+.PARAMETER ResumeFrom
+    Optional. Subscription ID to resume processing from (useful for resuming failed runs).
+
+.PARAMETER ThrottleLimit
+    Optional. Maximum number of parallel assessments to run. Default is 5.
+
+.EXAMPLE
+    # Run with default settings
+    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
+
+.EXAMPLE
+    # Run with custom parallelism and resume from a subscription
+    .\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json -ThrottleLimit 3 -ResumeFrom '00000000-0000-0000-0000-000000000001'
+#>
+# Suppress script analyzer warnings for this section
+[Diagnostics.CodeAnalysis.SuppressMessage('PSUseShouldProcessForStateChangingFunctions', '')]
+[Diagnostics.CodeAnalysis.SuppressMessage('PSReviewUnusedParameter', '')]
+
+# Define script parameters
 param (
-    [Parameter(Mandatory = $true)]
-    [ValidateScript({ 
+    [Parameter(Mandatory = $true,
+               HelpMessage = 'Path to the JSON configuration file')]
+    [ValidateScript({
         if (-not (Test-Path $_ -PathType 'Leaf')) {
             throw "Config file $_ not found"
         }
@@ -45,13 +76,16 @@ param (
     })]
     [string]$ConfigFile,
 
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $false,
+               HelpMessage = 'Subscription ID to resume processing from')]
     [string]$ResumeFrom,
 
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $false,
+               HelpMessage = 'Maximum number of parallel assessments')]
     [ValidateRange(1, 20)]
     [int]$ThrottleLimit = 5
 )
+#endregion
 
 # Initialize counters and tracking
 $script:totalProcessed = 0
@@ -71,7 +105,7 @@ function Invoke-RateLimitedRequest {
     $script:lock.EnterWriteLock()
     try {
         $now = Get-Date
-        if ($script:rateLimitLastCall -ne $null) {
+        if ($null -ne $script:rateLimitLastCall) {
             $timeSinceLastCall = ($now - $script:rateLimitLastCall).TotalMilliseconds
             if ($timeSinceLastCall -lt $script:rateLimitDelayMs) {
                 $sleepTime = [math]::Ceiling($script:rateLimitDelayMs - $timeSinceLastCall)
@@ -256,7 +290,11 @@ function Test-SubscriptionFilter {
         [Parameter(Mandatory = $true)]
         [Microsoft.Azure.Commands.Profile.Models.PSAzureSubscription]$Subscription,
         
-        [Parameter(Mandatory = $true)]
+        [Parameter(
+            Mandatory = $true,
+            HelpMessage = 'The filter criteria for subscriptions',
+            ValueFromPipelineByPropertyName = $true
+        )]
         [PSCustomObject]$Filter,
         
         [Parameter(Mandatory = $false)]
@@ -334,7 +372,7 @@ function Test-SubscriptionFilter {
 }
 
 # Function to process a single subscription
-function Process-Subscription {
+function Invoke-SubscriptionProcessing {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -394,8 +432,14 @@ function Process-Subscription {
         $tempConfigFile = Join-Path $env:TEMP "wara_temp_$(Get-Date -Format 'yyyyMMddHHmmss')_${subscriptionId}.json"
         $tempConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $tempConfigFile -Force
         
-        # Run the WARA collector for this subscription
-        $outputFile = Start-WARACollector -ConfigFile $tempConfigFile -PassThru
+        # Run the WARA collector for this subscription with error handling
+        try {
+            $outputFile = Start-WARACollector -ConfigFile $tempConfigFile -PassThru -ErrorAction Stop
+        }
+        catch {
+            Write-Error "Failed to run WARA collector for subscription $subscriptionName ($subscriptionId): $_"
+            throw
+        }
         
         if ($outputFile) {
             $result.OutputFile = $outputFile
@@ -514,7 +558,7 @@ try {
         param($subscription, $config, $outputDir, $totalSubscriptions, $processedCountRef, $succeededCountRef, $failedCountRef)
         
         try {
-            $result = Process-Subscription -Subscription $subscription -Config $config -OutputDir $outputDir `
+            $result = Invoke-SubscriptionProcessing -Subscription $subscription -Config $config -OutputDir $outputDir `
                 -TotalSubscriptions $totalSubscriptions -ProcessedCount $processedCountRef `
                 -SucceededCount $succeededCountRef -FailedCount $failedCountRef
             return $result

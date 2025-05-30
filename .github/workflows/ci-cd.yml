@@ -149,6 +149,11 @@ jobs:
       contents: read
       id-token: write  # Needed for OIDC authentication with Azure
     
+    # Environment variables specific to this job
+    env:
+      # Note: NUGET_API_KEY is passed as a secret to the specific steps that need it
+      NUGET_SOURCE: https://api.nuget.org/v3/index.json
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -164,17 +169,61 @@ jobs:
         with:
           pwsh-version: ${{ env.POWERSHELL_VERSION }}
           
-      - name: Publish to PowerShell Gallery
+      - name: Check for NUGET_API_KEY secret
+        id: check_nuget_key
         if: github.event_name == 'release' && github.event.action == 'created'
         run: |
-          if (-not $env:NUGET_API_KEY) {
-            Write-Error "NUGET_API_KEY secret is not set"
+          # Check if NUGET_API_KEY secret is available
+          if [ -z "${{ secrets.NUGET_API_KEY }}" ]; then
+            echo "::warning::NUGET_API_KEY secret is not set. Publishing to PowerShell Gallery will be skipped."
+            echo "publish_possible=false" >> $GITHUB_OUTPUT
+          else
+            echo "NUGET_API_KEY is set"
+            echo "publish_possible=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          # Explicitly pass the secret to this step
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Publish to PowerShell Gallery
+        if: steps.check_nuget_key.outputs.publish_possible == 'true'
+        run: |
+          try {
+            # Log the module being published (without exposing the API key)
+            Write-Host "Publishing module to PowerShell Gallery..."
+            
+            # Use the secret from environment variable
+            $publishParams = @{
+              Path = "./output/$env:MODULE_NAME"
+              ApiKey = $env:NUGET_API_KEY
+              ErrorAction = 'Stop'
+              Verbose = $true
+            }
+            
+            # Call the publish script
+            & "./scripts/publish-module.ps1" @publishParams
+            
+            # Log success
+            Write-Host "::notice::Module published to PowerShell Gallery successfully"
+          }
+          catch {
+            # Log error without exposing sensitive information
+            Write-Error "::error::Failed to publish module to PowerShell Gallery"
+            Write-Error "Error details have been written to the logs"
+            $_ | Format-List * -Force | Out-String | Write-Verbose
             exit 1
           }
-          ./scripts/publish-module.ps1 -Path "./output/$env:MODULE_NAME" -ApiKey $env:NUGET_API_KEY
         shell: pwsh
         env:
+          # Pass the secret to this step
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          
+      - name: Skip publish (no NUGET_API_KEY)
+        if: steps.check_nuget_key.outputs.publish_possible != 'true' && (github.event_name == 'release' && github.event.action == 'created')
+        run: |
+          echo "::warning::Skipping publish to PowerShell Gallery - NUGET_API_KEY secret is not configured"
+          echo "To publish to PowerShell Gallery, add the NUGET_API_KEY secret to your repository settings"
+        shell: bash
           
       - name: Verify Publish (if NUGET_API_KEY not available)
         if: github.event_name != 'release' || github.event.action != 'created'

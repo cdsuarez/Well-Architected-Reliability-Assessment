@@ -110,7 +110,7 @@ The WARA assessment is configured using a JSON file (`wara-tenant-config.json`).
 
 ## Running the WARA Assessment
 
-### Prerequisites
+### Assessment Prerequisites
 
 1. Clone the WARA repository
 2. Install required PowerShell modules:
@@ -139,7 +139,7 @@ To assess a single subscription, use the following steps:
 
 You can run tenant-wide assessments either locally or through a CI/CD pipeline.
 
-**Local Execution**
+#### Local Execution
 
 1. Update your configuration file to set `assessAllSubscriptions` to `true`:
 
@@ -165,19 +165,19 @@ You can run tenant-wide assessments either locally or through a CI/CD pipeline.
 }
 ```
 
-2. Run the assessment locally:
+1. Run the assessment locally:
 
-```powershell
-.\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
-```
+   ```powershell
+   .\scripts\Invoke-WARATenantAssessment.ps1 -ConfigFile .\wara-tenant-config.json
+   ```
 
-**Pipeline Integration**
+### Pipeline Integration
 
 The WARA pipeline (`azure-pipelines.wara.yml`) supports both single subscription and tenant-wide assessments. The pipeline automatically detects the assessment scope based on the configuration file.
 
-### Azure DevOps Setup
+#### Azure DevOps Setup
 
-#### 1. Create a Service Connection
+##### 1. Create a Service Connection
 
 1. Go to Project Settings > Service connections > New service connection
 2. Select "Azure Resource Manager" > "Service principal (automatic)"
@@ -213,16 +213,18 @@ variables:
     value: 'wara-tenant-config.json'  # Your config file
 ```
 
-### GitHub Actions Setup
+#### GitHub Actions Setup
 
-#### 1. Create Azure Credentials Secret
-   ```bash
-   az ad sp create-for-rbac --name "WARA-GitHub-Actions" \
-     --role reader \
-     --scopes /subscriptions/your-subscription-id \
-     --sdk-auth | ConvertTo-Json | Out-File -Encoding utf8 -FilePath ./azure-credentials.json
-   ```
-   Add the output as a GitHub secret named `AZURE_CREDENTIALS`
+##### 1. Create Azure Credentials Secret
+
+```bash
+az ad sp create-for-rbac --name "WARA-GitHub-Actions" \
+  --role reader \
+  --scopes /subscriptions/your-subscription-id \
+  --sdk-auth | ConvertTo-Json | Out-File -Encoding utf8 -FilePath ./azure-credentials.json
+```
+
+Add the output as a GitHub secret named `AZURE_CREDENTIALS`
 
 #### 2. Example Workflow
 
@@ -276,7 +278,8 @@ jobs:
 
 ### Configuration File Examples
 
-#### 1. Tenant-Wide Configuration (`wara-tenant-config.json`)
+#### 1. Single Subscription Configuration
+
 ```json
 {
   "azure": {
@@ -289,7 +292,8 @@ jobs:
 }
 ```
 
-2. **Tenant-Wide** (`wara-tenant-config.json`):
+#### 2. Tenant-Wide Configuration
+
 ```json
 {
   "azure": {
